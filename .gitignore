@@ -1,0 +1,14 @@
+# Archivos de configuración
+.env
+
+# Logs
+logs
+**/*.log
+**/*.log*
+
+
+# Dependency directories
+node_modules
+typings
+typings/*
+.vscode

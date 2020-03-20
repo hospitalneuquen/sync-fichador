@@ -1,0 +1,71 @@
+const config = require('./config');
+const logger = require('./logger').logger;
+const sqlClient = require('mssql');
+const mongoose = require('mongoose');
+
+
+// SQLServer Config
+const sqlConfig = {
+    user: config.db.sqlserver.user,
+    password: config.db.sqlserver.password,
+    server: config.db.sqlserver.server,
+    database: config.db.sqlserver.database,
+    parseJSON: true,
+    requestTimeout:60000,
+    connectionTimeout:60000,
+    pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000
+    }
+}
+
+const sqlServerPool = new sqlClient.ConnectionPool(sqlConfig);
+
+sqlServerPool.on('error', err => {
+    logger.error('SQLServer Error' + err);
+})
+
+
+//MongoDB Config
+const mongoConfig = {
+    url: config.db.mongo.url,
+    database: config.db.mongo.database
+}
+
+mongoose.Promise = Promise
+
+mongoose.connection.on('connected', () => {
+  logger.debug('MongoDB Connection Established')
+})
+
+mongoose.connection.on('reconnected', () => {
+  logger.debug('MongoDB Connection Reestablished')
+})
+
+mongoose.connection.on('disconnected', () => {
+  logger.debug('MongoDB Connection Disconnected')
+})
+
+mongoose.connection.on('close', () => {
+  logger.debug('MongoDB Connection Closed')
+})
+
+mongoose.connection.on('error', (error) => {
+  logger.error('MongoDB ERROR: ' + error)
+})
+
+async function connectMongoDB(){
+  await mongoose.connect(mongoConfig.url + '/' + mongoConfig.database, {
+    useNewUrlParser: true,
+    autoReconnect: true,
+    reconnectTries: 1000000,
+    reconnectInterval: 3000
+  })
+}
+
+module.exports = {
+    sqlServer : sqlServerPool,
+    connectMongoDB: connectMongoDB
+}
+
