@@ -7,17 +7,29 @@ async function nextFichada(mssqlPool){
     try {
         const request = mssqlPool.request();
         const result = await request.query`
-            SELECT TOP(1) FROM FichadasQueue
-            ORDER BY Id)`;
-    if (result.recordset && result.recordset.length){
-        const row = result.recordset[0];
-        
-    }
-    return;
+            SELECT TOP (1)
+                fichada.id id,
+                idAgente,
+                agente.Numero numeroAgente,
+                fecha,
+                esEntrada,
+                reloj,
+                format,
+                data1,
+                data2
+            FROM Personal_Fichadas fichada
+            LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
+            WHERE idAgente = 363
+            ORDER BY fecha DESC`;
+        if (result.recordset && result.recordset.length){
+            return result.recordset[0];
+        }
+        return;
     } catch (err) {
         logger.error(err);
     }
 }
+
 
 
 async function dequeueFichada(mssqlPool){
@@ -38,25 +50,39 @@ async function dequeueFichada(mssqlPool){
 
 async function postFichada(object){
     try{
-        // // Primero necesitamos recuperar el agente en mongodb a partir 
-        // // del numero de agente del viejo sistema
-        // if (!fichada.agente) return; // TODO Raise Error
-        // const agente = await schemas.Agente.findOne({ numero: fichada.agente }, { _id: 1, nombre: 1, apellido: 1}).lean();
-        // if (!agente) return; // TODO Raise Error
-        // // El agente existe. Creamos la fichada con sus respectivos 
-        // // datos y guardamos en la base.
-        // let object = new Fichada(
-        //     {
-        //         agente: {
-        //             _id: agente._id,
-        //             nombre: agente.nombre,
-        //             apellido: agente.apellido
-        //         },
-        //         fecha: fichada.fecha,
-        //         esEntrada: fichada.esEntrada,
-        //         reloj: fichada.reloj
-        //     });
-        let fichada = new schemas.Fichada(object)
+        // Primero necesitamos recuperar el agente en mongodb a partir 
+        // del numero de agente del viejo sistema
+        let agente;
+        if (!object.idAgente) throw "La fichada no presenta ID de Agente";
+        if (!mongoose.Types.ObjectId.isValid(object.idAgente)){
+            logger.info("MongoID Valido")
+            agente = await schemas.Agente.findOne(
+                { _id: mongoose.Types.ObjectId(object.idAgente)},
+                { _id: 1, nombre: 1, apellido: 1}).lean();    
+        }
+        else{
+            logger.info("Numero de Agente Valido")
+            agente = await schemas.Agente.findOne(
+                { numero: object.numeroAgente},
+                { _id: 1, nombre: 1, apellido: 1}).lean();   
+        }
+        
+        if (!agente) throw "La fichada posee un ID de Agente no valido.";
+        
+        // El agente existe. Creamos la fichada con sus respectivos 
+        // datos y guardamos en la base.
+        let fichada = new schemas.Fichada(
+            {
+                agente: {
+                    _id: agente._id,
+                    nombre: agente.nombre,
+                    apellido: agente.apellido
+                },
+                fecha: object.fecha,
+                esEntrada: object.esEntrada,
+                reloj: object.reloj
+            });
+        // let fichada = new schemas.Fichada(object);
         const nuevaFichada = await fichada.save();
         logger.debug('Fichada Sync OK:' +  JSON.stringify(nuevaFichada));
         // Finalmente actualizamos la fichadacache (entrada y salida)
@@ -141,6 +167,7 @@ async function findFichadaEntradaPrevia(agenteID, fichadaSalida){
 
 
 module.exports = {
+    nextFichada: nextFichada,
     postFichada: postFichada
 }
 

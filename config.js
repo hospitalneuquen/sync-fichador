@@ -20,10 +20,10 @@ module.exports = {
     },
     db: {
         sqlserver: {
-            server: env('SQLSERVER_SERVER', '172.16.1.79'),
+            server: env('SQLSERVER_SERVER', 'localhost'),
             database: env('SQLSERVER_DB', 'Hospital'),
-            user: env('SQLSERVER_USER', 'danievas'),
-            password: env('SQLSERVER_PASS', 'PeThiSha'),
+            user: env('SQLSERVER_USER', 'sa'),
+            password: env('SQLSERVER_PASS', 'blanca10'),
         },
         mongo: {
             url: env('MONGO_HOST', 'mongodb://localhost:27017'),

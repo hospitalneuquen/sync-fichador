@@ -1,24 +1,32 @@
 const db = require('./db');
 const poll = require('./poll');
 
-const sqlServerPool = db.sqlServerPool;
+// const sqlServerPool = db.sqlServerPool;
 
 async function sync() {
-    // await sqlServerPool.connect();
     await db.connectMongoDB();
-    await poll.postFichada(
-      {
-        "agente" : {
-            "_id" : "5e53f48ed40607323c624b8f"
-        },
-        "fecha" : "2013-09-27T14:06:46.000Z",
-        "esEntrada" : false,
-        "reloj" : 1,
-        "format" : "RSI_DLF_IDENTITY_VERIFIED",
-        "data1" : "0000001018",
-        "data2" : "3"
+    let pool = await db.connectSQLServerDB();
+    let fichada = await poll.nextFichada(pool);
+    if (fichada){
+        await poll.postFichada(fichada);
     }
-     )
+    
+
+    // console.log(pool)
+    // await db.connectMongoDB();
+    // await poll.postFichada(
+    //   {
+    //     "agente" : {
+    //         "_id" : "5e53f48ed40607323c624b8f"
+    //     },
+    //     "fecha" : "2013-09-27T14:06:46.000Z",
+    //     "esEntrada" : false,
+    //     "reloj" : 1,
+    //     "format" : "RSI_DLF_IDENTITY_VERIFIED",
+    //     "data1" : "0000001018",
+    //     "data2" : "3"
+    // }
+    //  )
 
     // let response = await fetch("/subscribe");
     // if (response.status == 502) {

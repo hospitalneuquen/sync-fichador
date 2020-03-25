@@ -27,6 +27,11 @@ sqlServerPool.on('error', err => {
 })
 
 
+async function connectSQLServerDB(){
+    await sqlServerPool.connect();
+    return sqlServerPool;
+}
+
 //MongoDB Config
 const mongoConfig = {
     url: config.db.mongo.url,
@@ -65,7 +70,8 @@ async function connectMongoDB(){
 }
 
 module.exports = {
-    sqlServer : sqlServerPool,
-    connectMongoDB: connectMongoDB
+    // sqlServer : sqlServerPool,
+    connectMongoDB: connectMongoDB,
+    connectSQLServerDB: connectSQLServerDB
 }
 
