@@ -29,6 +29,7 @@ sqlServerPool.on('error', err => {
 
 async function connectSQLServerDB(){
     await sqlServerPool.connect();
+    logger.debug('SQLServer Connection Established')
     return sqlServerPool;
 }
 
@@ -41,7 +42,7 @@ const mongoConfig = {
 mongoose.Promise = Promise
 
 mongoose.connection.on('connected', () => {
-  logger.debug('MongoDB Connection Established')
+  logger.debug('MongoDB Connection Established');
 })
 
 mongoose.connection.on('reconnected', () => {

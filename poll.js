@@ -3,6 +3,54 @@ var mongoose = require('mongoose');
 const schemas = require('./schemas');
 const utils = require('./utils');
 
+const timeout = ms => new Promise(res => setTimeout(res, ms))
+
+async function simulateFichadas(mssqlPool){
+    try {
+        const request = mssqlPool.request();
+        const result = await request.query`
+            SELECT
+                id,
+                idAgente,
+                fecha,
+                esEntrada,
+                reloj,
+                format,
+                data1,
+                data2
+            FROM Personal_Fichadas fichada
+            WHERE idAgente = 363
+            ORDER BY fecha ASC`;
+        if (result.recordset && result.recordset.length){
+            for (const row of result.recordset) {
+                const reqInsert = mssqlPool.request();
+                await reqInsert.query`
+                    INSERT INTO Personal_FichadasSync 
+                    VALUES (${row.idAgente}, ${row.fecha}, ${row.esEntrada},
+                        ${row.reloj}, ${row.format}, ${row.data1}, ${row.data2});`
+                // logger.info('Antes del timeout');
+                await timeout(3000)
+                // logger.info('Despues del timeout');
+            }
+        }
+        return;
+    } catch (err) {
+        logger.error(err);
+    }
+}
+
+
+async function syncFichadas(sqlPool){
+    while (true){
+        let fichada = await nextFichada(sqlPool);
+        if (fichada){
+            await postFichada(fichada);
+            await dequeueFichada(sqlPool, fichada.id)
+        }
+        await timeout(1000);
+    }
+}
+
 async function nextFichada(mssqlPool){
     try {
         const request = mssqlPool.request();
@@ -17,10 +65,10 @@ async function nextFichada(mssqlPool){
                 format,
                 data1,
                 data2
-            FROM Personal_Fichadas fichada
+            FROM Personal_FichadasSync fichada
             LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
             WHERE idAgente = 363
-            ORDER BY fecha DESC`;
+            ORDER BY fecha ASC`;
         if (result.recordset && result.recordset.length){
             return result.recordset[0];
         }
@@ -32,16 +80,13 @@ async function nextFichada(mssqlPool){
 
 
 
-async function dequeueFichada(mssqlPool){
+async function dequeueFichada(mssqlPool, fichadaID){
     try {
         const request = mssqlPool.request();
-        await request.query`
-            DELETE TOP(1) FROM FichadasQueue
-            OUTPUT deleted.Payload
-            WHERE Id = (
-                SELECT TOP(1) Id
-                FROM FichadaQueue WITH (rowlock, updlock, readpast)
-                ORDER BY Id)`;
+        const resultado = await request.query`
+            DELETE TOP(1) FROM Personal_FichadasSync
+            WHERE id = ${fichadaID}`;
+        logger.info("Resultado de Eliminar:" + JSON.stringify(resultado));
         return;
     } catch (err) {
         logger.error(err);
@@ -80,16 +125,15 @@ async function postFichada(object){
                 },
                 fecha: object.fecha,
                 esEntrada: object.esEntrada,
-                reloj: object.reloj
+                reloj: object.reloj,
+                format: object.format,
+                data1: object.data1,
+                data2: object.data2
             });
-        // let fichada = new schemas.Fichada(object);
         const nuevaFichada = await fichada.save();
         logger.debug('Fichada Sync OK:' +  JSON.stringify(nuevaFichada));
         // Finalmente actualizamos la fichadacache (entrada y salida)
         await actualizaFichadaIO(nuevaFichada);
-        // return res.json(nuevaFichada);
-        // const result = await Fichada.create(fichada);
-        // logger.debug('Se inserto OK:' +  JSON.stringify(result))
     } catch (err) {
         logger.error(err);
     }
@@ -168,7 +212,10 @@ async function findFichadaEntradaPrevia(agenteID, fichadaSalida){
 
 module.exports = {
     nextFichada: nextFichada,
-    postFichada: postFichada
+    postFichada: postFichada,
+    dequeueFichada: dequeueFichada,
+    simulateFichadas: simulateFichadas,
+    syncFichadas: syncFichadas
 }
 
 
