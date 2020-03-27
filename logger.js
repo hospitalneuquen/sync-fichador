@@ -39,6 +39,34 @@ class CustomInfoTransport extends Transport {
     }
 }
 
+function debugEnabled(){
+    let debug = false
+    for (const arg of process.argv.slice(2)) {
+        if ( arg === 'debug') {
+            debug = true;
+            break;
+        }
+    }
+    return debug;
+}
+
+/**
+ * Si se paremetriza la llamada al script principal con la opcion
+ * debug entonces se habiltan todos los logs. Los resultados se
+ * pueden chequear en el archivo de salida combined.log
+ * Sino se ejecuta el script con la opcion debug, solo los errores
+ * son registrados (mas alguna salida por console con nivel info)
+ */
+function getLoggerTransports(){
+    let transportes = [
+        new CustomInfoTransport({
+            levelOnly: true,
+        }),
+        new transports.File({ filename: 'error.log', level: 'error' })
+    ]
+    if ((debugEnabled())) transportes.push(new transports.File({ filename: 'combined.log', level: 'debug' })); 
+    return transportes;
+}
 
 /**
  * Final Logger Configuration
@@ -49,24 +77,9 @@ class CustomInfoTransport extends Transport {
 const logger = createLogger({
     format: customFormat,
     exitOnError: false,
-    transports: [
-        new CustomInfoTransport({
-            levelOnly: true,
-        }),
-        new transports.File({ filename: 'error.log', level: 'error' }),
-        new transports.File({ filename: 'combined.log', level: 'debug' }) 
-    ]
+    transports: getLoggerTransports()
 });
 
-//
-// If we're not in production then log to the `console` with the format:
-// `${info.level}: ${info.message} JSON.stringify({ ...rest }) `
-// 
-// if (process.env.NODE_ENV !== 'production') {
-//   logger.add(new winston.transports.Console({
-//     format: winston.format.simple()
-//   }));
-// }
 
 module.exports = {
     logger : logger,

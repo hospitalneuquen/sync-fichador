@@ -42,16 +42,16 @@ async function simulateFichadas(mssqlPool){
 
 async function syncFichadas(sqlPool){
     while (true){
-        let fichada = await nextFichada(sqlPool);
+        let fichada = await nextFichadaFromSQLServer(sqlPool);
         if (fichada){
-            await postFichada(fichada);
-            await dequeueFichada(sqlPool, fichada.id)
+            await saveFichadaToMongo(fichada);
+            await removeFichadaFromSQLServer(sqlPool, fichada.id)
         }
         await timeout(1000);
     }
 }
 
-async function nextFichada(mssqlPool){
+async function nextFichadaFromSQLServer(mssqlPool){
     try {
         const request = mssqlPool.request();
         const result = await request.query`
@@ -70,7 +70,9 @@ async function nextFichada(mssqlPool){
             WHERE idAgente = 363
             ORDER BY fecha ASC`;
         if (result.recordset && result.recordset.length){
-            return result.recordset[0];
+            const fichada = result.recordset[0];
+            logger.debug("Fichada from SQLServer:" + JSON.stringify(fichada));
+            return fichada;
         }
         return;
     } catch (err) {
@@ -80,33 +82,31 @@ async function nextFichada(mssqlPool){
 
 
 
-async function dequeueFichada(mssqlPool, fichadaID){
+async function removeFichadaFromSQLServer(mssqlPool, fichadaID){
     try {
         const request = mssqlPool.request();
         const resultado = await request.query`
             DELETE TOP(1) FROM Personal_FichadasSync
             WHERE id = ${fichadaID}`;
-        logger.info("Resultado de Eliminar:" + JSON.stringify(resultado));
+        logger.debug("Fichada eliminada de SQLServer:" + JSON.stringify(resultado));
         return;
     } catch (err) {
         logger.error(err);
     }
 }
 
-async function postFichada(object){
+async function saveFichadaToMongo(object){
     try{
         // Primero necesitamos recuperar el agente en mongodb a partir 
         // del numero de agente del viejo sistema
         let agente;
         if (!object.idAgente) throw "La fichada no presenta ID de Agente";
         if (!mongoose.Types.ObjectId.isValid(object.idAgente)){
-            logger.info("MongoID Valido")
             agente = await schemas.Agente.findOne(
                 { _id: mongoose.Types.ObjectId(object.idAgente)},
                 { _id: 1, nombre: 1, apellido: 1}).lean();    
         }
         else{
-            logger.info("Numero de Agente Valido")
             agente = await schemas.Agente.findOne(
                 { numero: object.numeroAgente},
                 { _id: 1, nombre: 1, apellido: 1}).lean();   
@@ -131,7 +131,7 @@ async function postFichada(object){
                 data2: object.data2
             });
         const nuevaFichada = await fichada.save();
-        logger.debug('Fichada Sync OK:' +  JSON.stringify(nuevaFichada));
+        logger.debug('Fichada saved in Mongo OK:' +  JSON.stringify(nuevaFichada));
         // Finalmente actualizamos la fichadacache (entrada y salida)
         await actualizaFichadaIO(nuevaFichada);
     } catch (err) {
@@ -142,6 +142,13 @@ async function postFichada(object){
 async function actualizaFichadaIO(nuevaFichada) {
     let fichadaIO; 
     if (nuevaFichada.esEntrada){
+        // Obs: Existen casos limites en los cuales por error (generalmente)
+        // el agente ficha en el mismo dia el ingreso y egreso como entrada.
+        // Estos casos se deberan corregir manualmente. Se podria habilitar
+        // esta opcion de correccion manual quizas en los partes cuando los
+        // jefes de servicio pueden visualizar estas inconsistencias. 
+        // Tambien se puede presentar el caso inverso de dos fichadas en el 
+        // mismo dia como salida.
         fichadaIO = new schemas.FichadaCache({  
             agente: nuevaFichada.agente,
             fecha: utils.parseDate(nuevaFichada.fecha),
@@ -160,7 +167,6 @@ async function actualizaFichadaIO(nuevaFichada) {
                 fichadaIO.salida = nuevaFichada.fecha;
                 correspondeNuevaFichadaIO = false;
             }
-            
         }
         if (correspondeNuevaFichadaIO){
             fichadaIO = new schemas.FichadaCache({  
@@ -172,7 +178,7 @@ async function actualizaFichadaIO(nuevaFichada) {
         }
     }
     let fichadaIOResult = await fichadaIO.save();
-    logger.debug('FichadaIO(Cache) Updated OK:' +  JSON.stringify(fichadaIOResult));
+    logger.debug('FichadaIO(Cache) updated OK:' +  JSON.stringify(fichadaIOResult));
 }
 
 
@@ -205,15 +211,17 @@ async function findFichadaEntradaPrevia(agenteID, fichadaSalida){
                 ]}
         })
         .sort({ fecha: -1 });
+        logger.debug('FichadaIO(Cache) previa:' +  JSON.stringify(fichadaIO));
     return fichadaIO;
 }
 
 
 
 module.exports = {
-    nextFichada: nextFichada,
-    postFichada: postFichada,
-    dequeueFichada: dequeueFichada,
+    nextFichadaFromSQLServer: nextFichadaFromSQLServer,
+    saveFichadaToMongo: saveFichadaToMongo,
+    actualizaFichadaIO: actualizaFichadaIO,
+    removeFichadaFromSQLServer: removeFichadaFromSQLServer,
     simulateFichadas: simulateFichadas,
     syncFichadas: syncFichadas
 }

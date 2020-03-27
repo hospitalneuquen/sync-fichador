@@ -4,8 +4,7 @@ function substractOneDay(fecha){
 }
 
 function diffHours(date1, date2){
-    // TODO Implementar!
-    return 12;
+    return Math.abs(date1 - date2) / 36e5;
 }
 
 function parseDate(date){
