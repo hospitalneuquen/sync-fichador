@@ -3,152 +3,119 @@ var mongoose = require('mongoose');
 const schemas = require('./schemas');
 const utils = require('./utils');
 
-const timeout = ms => new Promise(res => setTimeout(res, ms))
 
-async function simulateFichadas(mssqlPool){
-    try {
-        const request = mssqlPool.request();
-        const result = await request.query`
-            SELECT
-                id,
-                idAgente,
-                fecha,
-                esEntrada,
-                reloj,
-                format,
-                data1,
-                data2
-            FROM Personal_Fichadas fichada
-            WHERE idAgente = 363
-            ORDER BY fecha ASC`;
-        if (result.recordset && result.recordset.length){
-            for (const row of result.recordset) {
-                const reqInsert = mssqlPool.request();
-                await reqInsert.query`
-                    INSERT INTO Personal_FichadasSync 
-                    VALUES (${row.idAgente}, ${row.fecha}, ${row.esEntrada},
-                        ${row.reloj}, ${row.format}, ${row.data1}, ${row.data2});`
-                // logger.info('Antes del timeout');
-                await timeout(3000)
-                // logger.info('Despues del timeout');
-            }
-        }
-        return;
-    } catch (err) {
-        logger.error(err);
-    }
-}
-
-
+/**
+ * Loop principal de sincronizacion. Infinitamente:
+ * 1. Buscamos una nueva fichada en SQLServer
+ * 2. Copiamos la nueva fichada a MongoDB (+ actalizacion E/S)
+ * 3. Eliminamos la fichada leida desde SQLServer
+ * @param  sqlPool 
+ */
 async function syncFichadas(sqlPool){
-    while (true){
-        let fichada = await nextFichadaFromSQLServer(sqlPool);
-        if (fichada){
-            await saveFichadaToMongo(fichada);
-            await removeFichadaFromSQLServer(sqlPool, fichada.id)
+    while (true){ // Infinite loop
+        try {
+            let fichada = await nextFichadaFromSQLServer(sqlPool);
+            if (fichada){
+                await saveFichadaToMongo(fichada);
+                await removeFichadaFromSQLServer(sqlPool, fichada.id)
+            }
+            await utils.timeout(3000);
+        } catch (err) {
+            logger.error('Se encontró un error en el loop principal de sincronizacion.');
+            logger.error(err);
+            logger.error('Reintentando operacion en 60s');
+            await utils.timeout(30000); // Esperamos 1 min antes de reiniciar
         }
-        await timeout(1000);
     }
 }
 
 async function nextFichadaFromSQLServer(mssqlPool){
-    try {
-        const request = mssqlPool.request();
-        const result = await request.query`
-            SELECT TOP (1)
-                fichada.id id,
-                idAgente,
-                agente.Numero numeroAgente,
-                fecha,
-                esEntrada,
-                reloj,
-                format,
-                data1,
-                data2
-            FROM Personal_FichadasSync fichada
-            LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
-            WHERE idAgente = 363
-            ORDER BY fecha ASC`;
-        if (result.recordset && result.recordset.length){
-            const fichada = result.recordset[0];
-            logger.debug("Fichada from SQLServer:" + JSON.stringify(fichada));
-            return fichada;
-        }
-        return;
-    } catch (err) {
-        logger.error(err);
+    const request = mssqlPool.request();
+    const result = await request.query`
+        SELECT TOP (1)
+            fichada.id id,
+            idAgente,
+            agente.Numero numeroAgente,
+            fecha,
+            esEntrada,
+            reloj,
+            format,
+            data1,
+            data2
+        FROM Personal_FichadasSync fichada
+        LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
+        ORDER BY fecha ASC`;
+    if (result.recordset && result.recordset.length){
+        const fichada = result.recordset[0];
+        logger.debug("Fichada from SQLServer:" + JSON.stringify(fichada));
+        return fichada;
     }
+    return;
 }
-
 
 
 async function removeFichadaFromSQLServer(mssqlPool, fichadaID){
-    try {
-        const request = mssqlPool.request();
-        const resultado = await request.query`
-            DELETE TOP(1) FROM Personal_FichadasSync
-            WHERE id = ${fichadaID}`;
-        logger.debug("Fichada eliminada de SQLServer:" + JSON.stringify(resultado));
-        return;
-    } catch (err) {
-        logger.error(err);
-    }
+    const request = mssqlPool.request();
+    const resultado = await request.query`
+        DELETE TOP(1) FROM Personal_FichadasSync
+        WHERE id = ${fichadaID}`;
+    logger.debug("Fichada eliminada de SQLServer:" + JSON.stringify(resultado));
+    return;
 }
 
 async function saveFichadaToMongo(object){
-    try{
-        // Primero necesitamos recuperar el agente en mongodb a partir 
-        // del numero de agente del viejo sistema
-        let agente;
-        if (!object.idAgente) throw "La fichada no presenta ID de Agente";
-        if (!mongoose.Types.ObjectId.isValid(object.idAgente)){
-            agente = await schemas.Agente.findOne(
-                { _id: mongoose.Types.ObjectId(object.idAgente)},
-                { _id: 1, nombre: 1, apellido: 1}).lean();    
-        }
-        else{
-            agente = await schemas.Agente.findOne(
-                { numero: object.numeroAgente},
-                { _id: 1, nombre: 1, apellido: 1}).lean();   
-        }
-        
-        if (!agente) throw "La fichada posee un ID de Agente no valido.";
-        
-        // El agente existe. Creamos la fichada con sus respectivos 
-        // datos y guardamos en la base.
-        let fichada = new schemas.Fichada(
-            {
-                agente: {
-                    _id: agente._id,
-                    nombre: agente.nombre,
-                    apellido: agente.apellido
-                },
-                fecha: object.fecha,
-                esEntrada: object.esEntrada,
-                reloj: object.reloj,
-                format: object.format,
-                data1: object.data1,
-                data2: object.data2
-            });
-        const nuevaFichada = await fichada.save();
-        logger.debug('Fichada saved in Mongo OK:' +  JSON.stringify(nuevaFichada));
-        // Finalmente actualizamos la fichadacache (entrada y salida)
-        await actualizaFichadaIO(nuevaFichada);
-    } catch (err) {
-        logger.error(err);
+    // Primero necesitamos recuperar algunos datos extras del agente en
+    // mongodb para incluir como parte de la info de la fichada
+    let agente;
+    if (!object.idAgente) throw "La fichada no presenta ID de Agente";
+    if (mongoose.isValidObjectId(object.idAgente)){
+        agente = await schemas.Agente.findOne(
+            { _id: mongoose.Types.ObjectId(object.idAgente)},
+            { _id: 1, nombre: 1, apellido: 1}).lean();    
     }
+    else{
+        // Si el idAgente no es un id valido para mongo, entonces puede 
+        // tratarse de un dato con el id de agente del viejo sistema. 
+        // En este caso intentamos una busqueda por el numero de agente
+        agente = await schemas.Agente.findOne(
+            { numero: object.numeroAgente},
+            { _id: 1, nombre: 1, apellido: 1}).lean();   
+    }
+    
+    if (!agente) throw "La fichada posee un ID de Agente no valido.";
+    
+    // El agente existe. Creamos la fichada con sus respectivos 
+    // datos y guardamos en la base.
+    let fichada = new schemas.Fichada(
+        {
+            agente: {
+                _id: agente._id,
+                nombre: agente.nombre,
+                apellido: agente.apellido
+            },
+            fecha: object.fecha,
+            esEntrada: object.esEntrada,
+            reloj: object.reloj,
+            format: object.format,
+            data1: object.data1,
+            data2: object.data2
+        });
+    const nuevaFichada = await fichada.save();
+    logger.debug('Fichada saved in Mongo OK:' +  JSON.stringify(nuevaFichada));
+    // Finalmente actualizamos la fichadacache (entrada y salida)
+    await actualizaFichadaIO(nuevaFichada);
 }
 
 async function actualizaFichadaIO(nuevaFichada) {
     let fichadaIO; 
     if (nuevaFichada.esEntrada){
         // Obs: Existen casos limites en los cuales por error (generalmente)
-        // el agente ficha en el mismo dia el ingreso y egreso como entrada.
-        // Estos casos se deberan corregir manualmente. Se podria habilitar
-        // esta opcion de correccion manual quizas en los partes cuando los
-        // jefes de servicio pueden visualizar estas inconsistencias. 
+        // el agente ficha en el mismo dia el ingreso y egreso como entrada
         // Tambien se puede presentar el caso inverso de dos fichadas en el 
         // mismo dia como salida.
+        // Estos casos se deberan corregir manualmente. Se podria habilitar
+        // esta opcion de correccion manual quizas en los partes cuando los
+        // jefes de servicio pueden visualizar estas inconsistencias.     
         fichadaIO = new schemas.FichadaCache({  
             agente: nuevaFichada.agente,
             fecha: utils.parseDate(nuevaFichada.fecha),
@@ -222,7 +189,6 @@ module.exports = {
     saveFichadaToMongo: saveFichadaToMongo,
     actualizaFichadaIO: actualizaFichadaIO,
     removeFichadaFromSQLServer: removeFichadaFromSQLServer,
-    simulateFichadas: simulateFichadas,
     syncFichadas: syncFichadas
 }
 

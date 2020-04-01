@@ -39,6 +39,15 @@ class CustomInfoTransport extends Transport {
     }
 }
 
+
+/**
+ * Verifica si el script se ejecuto con el parametro debug
+ * Ej. node index.js debug         -> return true
+ *     node index.js debug verbose -> return true
+ *     node index.js verbose debug -> return true
+ *     node index.js --debug       -> return false
+ *     node index.js               -> return false
+ */
 function debugEnabled(){
     let debug = false
     for (const arg of process.argv.slice(2)) {

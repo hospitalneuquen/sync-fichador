@@ -3,6 +3,10 @@ const logger = require('./logger').logger;
 const sqlClient = require('mssql');
 const mongoose = require('mongoose');
 
+mongoose.isValidObjectId = function(str){
+  if (typeof str !== 'string') return false;
+  return str.match(/^[a-f\d]{24}$/i);
+}
 
 // SQLServer Config
 const sqlConfig = {
@@ -50,7 +54,7 @@ mongoose.connection.on('reconnected', () => {
 })
 
 mongoose.connection.on('disconnected', () => {
-  logger.debug('MongoDB Connection Disconnected')
+  logger.error('MongoDB Connection Disconnected')
 })
 
 mongoose.connection.on('close', () => {
