@@ -38,10 +38,7 @@ async function nextFichadaFromSQLServer(mssqlPool){
             agente.Numero numeroAgente,
             fecha,
             esEntrada,
-            reloj,
-            format,
-            data1,
-            data2
+            reloj
         FROM Personal_FichadasSync fichada
         LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
         ORDER BY fecha ASC`;
@@ -95,10 +92,7 @@ async function saveFichadaToMongo(object){
             },
             fecha: object.fecha,
             esEntrada: object.esEntrada,
-            reloj: object.reloj,
-            format: object.format,
-            data1: object.data1,
-            data2: object.data2
+            reloj: object.reloj
         });
     const nuevaFichada = await fichada.save();
     logger.debug('Fichada saved in Mongo OK:' +  JSON.stringify(nuevaFichada));

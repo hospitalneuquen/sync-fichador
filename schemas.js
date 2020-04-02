@@ -14,11 +14,7 @@ var FichadaSchema = new mongoose.Schema({
         index: true
     }, 
     esEntrada: Boolean,
-    reloj: Number,
-    format: String,
-    data1: String,
-    data2: String
-
+    reloj: Number
 });
 
 
