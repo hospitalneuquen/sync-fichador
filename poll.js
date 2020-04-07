@@ -3,6 +3,8 @@ var mongoose = require('mongoose');
 const schemas = require('./schemas');
 const utils = require('./utils');
 
+class SyncDataException extends Error {};
+
 
 /**
  * Loop principal de sincronizacion. Infinitamente:
@@ -12,42 +14,54 @@ const utils = require('./utils');
  * @param  sqlPool 
  */
 async function syncFichadas(sqlPool){
+    let fichada;
+    let agente;
     while (true){ // Infinite loop
         try {
-            let fichada = await nextFichadaFromSQLServer(sqlPool);
+            fichada = await nextFichadaFromSQLServer(sqlPool);
             if (fichada){
-                await saveFichadaToMongo(fichada);
+                agente = await findAgenteFichada(sqlPool, fichada);
+                await saveFichadaToMongo(fichada, agente);
                 await removeFichadaFromSQLServer(sqlPool, fichada.id)
             }
             await utils.timeout(3000);
         } catch (err) {
-            logger.error('Se encontró un error en el loop principal de sincronizacion.');
-            logger.error(err);
-            logger.error('Reintentando operacion en 60s');
-            await utils.timeout(30000); // Esperamos 1 min antes de reiniciar
+            if (err instanceof SyncDataException){
+                logger.error(err);
+                try {
+                    await markFichadaAsFailedInSQLServer(sqlPool, fichada.id, err.message);
+                }
+                catch( err2){
+                    logger.error(err2);
+                }
+            }
+            else{
+                logger.error('Se encontró un error en el loop principal de sincronizacion.');
+                logger.error(err);
+                logger.error('Reintentando operacion en 60s');
+                await utils.timeout(60000); // Esperamos 1 min antes de reiniciar
+            }
         }
     }
 }
 
+
 async function nextFichadaFromSQLServer(mssqlPool){
     const request = mssqlPool.request();
     const result = await request.query`
-        SELECT TOP (1)
-            fichada.id id,
-            idAgente,
-            agente.Numero numeroAgente,
-            fecha,
-            esEntrada,
-            reloj
-        FROM Personal_FichadasSync fichada
-        LEFT JOIN Personal_Agentes agente ON (fichada.idAgente = agente.ID)
-        ORDER BY fecha ASC`;
+        UPDATE TOP (1) Personal_FichadasSync
+        SET syncTries = syncTries + 1
+        OUTPUT  inserted.id,
+                inserted.idAgente,
+                inserted.fecha,
+                inserted.esEntrada,
+                inserted.reloj
+        WHERE syncTries <3 AND syncError is NULL`;
     if (result.recordset && result.recordset.length){
-        const fichada = result.recordset[0];
+        let fichada = result.recordset[0];
         logger.debug("Fichada from SQLServer:" + JSON.stringify(fichada));
         return fichada;
     }
-    return;
 }
 
 
@@ -60,44 +74,61 @@ async function removeFichadaFromSQLServer(mssqlPool, fichadaID){
     return;
 }
 
-async function saveFichadaToMongo(object){
-    // Primero necesitamos recuperar algunos datos extras del agente en
-    // mongodb para incluir como parte de la info de la fichada
-    let agente;
-    if (!object.idAgente) throw "La fichada no presenta ID de Agente";
-    if (mongoose.isValidObjectId(object.idAgente)){
-        agente = await schemas.Agente.findOne(
-            { _id: mongoose.Types.ObjectId(object.idAgente)},
-            { _id: 1, nombre: 1, apellido: 1}).lean();    
-    }
-    else{
-        // Si el idAgente no es un id valido para mongo, entonces puede 
-        // tratarse de un dato con el id de agente del viejo sistema. 
-        // En este caso intentamos una busqueda por el numero de agente
-        agente = await schemas.Agente.findOne(
-            { numero: object.numeroAgente},
-            { _id: 1, nombre: 1, apellido: 1}).lean();   
-    }
-    
-    if (!agente) throw "La fichada posee un ID de Agente no valido.";
+async function saveFichadaToMongo(fichada, agente){
+    if (!agente) throw new SyncDataException(`La fichada posee un ID de Agente no valido en MongoDB. FichadaID=${fichada.id}`);
     
     // El agente existe. Creamos la fichada con sus respectivos 
     // datos y guardamos en la base.
-    let fichada = new schemas.Fichada(
+    let fichadaToSync = new schemas.Fichada(
         {
             agente: {
                 _id: agente._id,
                 nombre: agente.nombre,
                 apellido: agente.apellido
             },
-            fecha: object.fecha,
-            esEntrada: object.esEntrada,
-            reloj: object.reloj
+            fecha: fichada.fecha,
+            esEntrada: fichada.esEntrada,
+            reloj: fichada.reloj
         });
-    const nuevaFichada = await fichada.save();
+    const nuevaFichada = await fichadaToSync.save();
     logger.debug('Fichada saved in Mongo OK:' +  JSON.stringify(nuevaFichada));
     // Finalmente actualizamos la fichadacache (entrada y salida)
     await actualizaFichadaIO(nuevaFichada);
+}
+
+
+async function findAgenteFichada(mssqlPool, fichada){
+    let agente;
+    if (!fichada.idAgente) throw new SyncDataException(`La fichada no presenta ID de Agente. FichadaID=${fichada.id}`);
+    if (mongoose.isValidObjectId(fichada.idAgente)){
+        agente = await schemas.Agente.findOne(
+            { _id: mongoose.Types.ObjectId(fichada.idAgente)},
+            { _id: 1, nombre: 1, apellido: 1}).lean();    
+    }
+    else{
+        // Si el idAgente no es un id valido para mongo, entonces puede 
+        // tratarse de un dato con el id de agente del viejo sistema. 
+        agente = await findAgenteFromSQLServer(mssqlPool, fichada);
+        if (!agente || !agente.Numero) throw new SyncDataException(`La fichada no presenta un ID ni Nro de Agente válido. FichadaID=${fichada.id}`);        
+        // En este caso intentamos una busqueda por el numero de agente
+        agente = await schemas.Agente.findOne(
+            { numero: agente.Numero },
+            { _id: 1, nombre: 1, apellido: 1}).lean();   
+    }
+    logger.debug("Agente que ficho:" + JSON.stringify(agente));
+    return agente;
+}
+
+
+async function findAgenteFromSQLServer(mssqlPool, fichada){
+    if (!fichada.idAgente) throw new SyncDataException(`La fichada no presenta ID de Agente. FichadaID=${fichada.id}`);
+    const request = mssqlPool.request();
+    const result = await request.query`
+        SELECT TOP (1) * FROM Personal_Agentes
+        WHERE ID = ${fichada.idAgente}`;
+    if (result.recordset && result.recordset.length){
+        return result.recordset[0];
+    }
 }
 
 async function actualizaFichadaIO(nuevaFichada) {
@@ -176,6 +207,19 @@ async function findFichadaEntradaPrevia(agenteID, fichadaSalida){
     return fichadaIO;
 }
 
+
+async function markFichadaAsFailedInSQLServer(mssqlPool, fichadaID, errMsj){
+    try {
+        const request = mssqlPool.request();
+        await request.query`
+            UPDATE Personal_FichadasSync SET syncError = ${errMsj}
+            WHERE id = ${fichadaID}`;
+        logger.debug(`Fichada identificada con problemas en SQLServer: ID=${fichadaID}. Error=${errMsj}`);      
+    } catch (err) {
+        logger.debug(`Ocurrió un error al intentar marcar como fallida la fichada con ID: ${fichadaID}`)
+        logger.error(err);
+    }
+}
 
 
 module.exports = {

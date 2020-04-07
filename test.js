@@ -51,5 +51,22 @@ async function main(){
     }
 }
 
+function isValidObjectId(str){
+    if (typeof str !== 'string') return false;
+    return str.match(/^[a-f\d]{24}$/i)? true: false;
+  }
 
-main();
+function testIsObjectID(){
+    console.log(isValidObjectId(4694));
+    console.log(isValidObjectId(null));
+    console.log(isValidObjectId(undefined));
+    console.log(isValidObjectId());
+    console.log(isValidObjectId("4694"));
+    console.log(isValidObjectId("ffffffffffffffffwfffffff"));
+    console.log(isValidObjectId("fffffffffffffffffffffff"));
+    console.log(isValidObjectId("ffffffffffffffffffffffff"));
+    console.log(isValidObjectId("5e53f20bd40607323c554346"));   
+}
+
+testIsObjectID();
+// main();

@@ -1,4 +1,5 @@
 const logger = require('./logger').logger;
+const db = require('./db');
 const utils = require('./utils');
 
 async function simulateFichadas(mssqlPool){
@@ -10,10 +11,7 @@ async function simulateFichadas(mssqlPool){
                 idAgente,
                 fecha,
                 esEntrada,
-                reloj,
-                format,
-                data1,
-                data2
+                reloj
             FROM Personal_Fichadas fichada
             WHERE idAgente = 363
             ORDER BY fecha ASC`;
@@ -21,10 +19,9 @@ async function simulateFichadas(mssqlPool){
             for (const row of result.recordset) {
                 const reqInsert = mssqlPool.request();
                 await reqInsert.query`
-                    INSERT INTO Personal_FichadasTemp 
-                    VALUES (${row.idAgente}, ${row.fecha}, ${row.esEntrada},
-                        ${row.reloj}, ${row.format}, ${row.data1}, ${row.data2});`
-                await utils.timeout(1000)
+                    INSERT INTO Personal_FichadasTemp (idAgente, fecha, esEntrada, reloj)
+                    VALUES (${row.idAgente}, ${row.fecha}, ${row.esEntrada},${row.reloj});`
+                await utils.timeout(500)
             }
         }
         return;
@@ -33,7 +30,15 @@ async function simulateFichadas(mssqlPool){
     }
 }
 
-
-module.exports = {
-    simulateFichadas: simulateFichadas
+async function main(){
+    try {
+        const sqlPool = await db.connectSQLServerDB();
+        // Simulamos
+        simulateFichadas(sqlPool);
+    
+    } catch (err) {
+        logger.error(err);
+    }
 }
+
+main();

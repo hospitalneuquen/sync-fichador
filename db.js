@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 
 mongoose.isValidObjectId = function(str){
   if (typeof str !== 'string') return false;
-  return str.match(/^[a-f\d]{24}$/i);
+  return str.match(/^[a-f\d]{24}$/i)? true: false;
 }
 
 // SQLServer Config
@@ -66,7 +66,7 @@ mongoose.connection.on('error', (error) => {
 })
 
 async function connectMongoDB(){
-  await mongoose.connect(mongoConfig.url + '/' + mongoConfig.database, {
+  await mongoose.connect(mongoConfig.url, {
     useNewUrlParser: true,
     autoReconnect: true,
     reconnectTries: 1000000,
@@ -79,4 +79,3 @@ module.exports = {
     connectMongoDB: connectMongoDB,
     connectSQLServerDB: connectSQLServerDB
 }
-
