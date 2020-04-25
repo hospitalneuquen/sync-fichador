@@ -9,7 +9,7 @@ class SyncDataException extends Error {};
 /**
  * Loop principal de sincronizacion. Infinitamente:
  * 1. Buscamos una nueva fichada en SQLServer
- * 2. Copiamos la nueva fichada a MongoDB (+ actalizacion E/S)
+ * 2. Copiamos la nueva fichada a MongoDB (+ actualizacion E/S)
  * 3. Eliminamos la fichada leida desde SQLServer
  * @param  sqlPool 
  */

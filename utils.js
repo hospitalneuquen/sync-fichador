@@ -8,7 +8,7 @@ function diffHours(date1, date2){
 }
 
 function parseDate(date){
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
 const timeout = ms => new Promise(res => setTimeout(res, ms));
