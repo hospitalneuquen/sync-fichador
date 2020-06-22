@@ -63,8 +63,8 @@ var FichadaCacheSchema = new mongoose.Schema({
 
 })
 
-var Fichada = mongoose.model('Fichada', FichadaSchema, 'fichadastest');
-var FichadaCache = mongoose.model('FichadaCache', FichadaCacheSchema, 'fichadascachetest');
+var Fichada = mongoose.model('Fichada', FichadaSchema, 'fichadas');
+var FichadaCache = mongoose.model('FichadaCache', FichadaCacheSchema, 'fichadascache');
 var Agente = mongoose.model('Agente', AgenteSchema, 'agentes');
 
 module.exports = {
