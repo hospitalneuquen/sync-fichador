@@ -14,6 +14,7 @@ class SyncDataException extends Error {};
  * @param  sqlPool 
  */
 async function syncFichadas(sqlPool){
+    logger.debug("Inicio sincronizador.")
     let fichada;
     let agente;
     while (true){ // Infinite loop
@@ -56,7 +57,7 @@ async function nextFichadaFromSQLServer(mssqlPool){
                 inserted.fecha,
                 inserted.esEntrada,
                 inserted.reloj
-        WHERE syncTries <3 AND syncError is NULL`;
+        WHERE syncTries <3`;
     if (result.recordset && result.recordset.length){
         let fichada = result.recordset[0];
         logger.debug("Fichada from SQLServer:" + JSON.stringify(fichada));
@@ -100,14 +101,16 @@ async function saveFichadaToMongo(fichada, agente){
 async function findAgenteFichada(mssqlPool, fichada){
     let agente;
     if (!fichada.idAgente) throw new SyncDataException(`La fichada no presenta ID de Agente. FichadaID=${fichada.id}`);
-    if (mongoose.isValidObjectId(fichada.idAgente)){
-        agente = await schemas.Agente.findOne(
-            { _id: mongoose.Types.ObjectId(fichada.idAgente)},
-            { _id: 1, nombre: 1, apellido: 1}).lean();    
-    }
-    else{
+        
+    agente = await schemas.Agente.findOne(
+        { idLegacy: fichada.idAgente },
+        { _id: 1, nombre: 1, apellido: 1}).lean();
+        
+    if (!agente){
         // Si el idAgente no es un id valido para mongo, entonces puede 
-        // tratarse de un dato con el id de agente del viejo sistema. 
+        // tratarse de un dato con el id de agente del viejo sistema.
+        // Esta condicion es solo temporal hasta que se decida la baja
+        // del viejo sistema 
         agente = await findAgenteFromSQLServer(mssqlPool, fichada);
         if (!agente || !agente.Numero) throw new SyncDataException(`La fichada no presenta un ID ni Nro de Agente válido. FichadaID=${fichada.id}`);        
         // En este caso intentamos una busqueda por el numero de agente
@@ -115,6 +118,7 @@ async function findAgenteFichada(mssqlPool, fichada){
             { numero: agente.Numero },
             { _id: 1, nombre: 1, apellido: 1}).lean();   
     }
+    
     logger.debug("Agente que ficho:" + JSON.stringify(agente));
     return agente;
 }
@@ -133,6 +137,7 @@ async function findAgenteFromSQLServer(mssqlPool, fichada){
 
 async function actualizaFichadaIO(nuevaFichada) {
     let fichadaIO; 
+    const fechaFichada = utils.parseDate(nuevaFichada.fecha);
     if (nuevaFichada.esEntrada){
         // Obs: Existen casos limites en los cuales por error (generalmente)
         // el agente ficha en el mismo dia el ingreso y egreso como entrada
@@ -143,7 +148,7 @@ async function actualizaFichadaIO(nuevaFichada) {
         // jefes de servicio pueden visualizar estas inconsistencias.     
         fichadaIO = new schemas.FichadaCache({  
             agente: nuevaFichada.agente,
-            fecha: utils.parseDate(nuevaFichada.fecha),
+            fecha: fechaFichada,
             entrada: nuevaFichada.fecha,
             salida: null
         })       
@@ -163,7 +168,7 @@ async function actualizaFichadaIO(nuevaFichada) {
         if (correspondeNuevaFichadaIO){
             fichadaIO = new schemas.FichadaCache({  
                 agente: nuevaFichada.agente,
-                fecha: utils.parseDate(nuevaFichada.fecha),
+                fecha: fechaFichada,
                 entrada: null,
                 salida: nuevaFichada.fecha
             })  

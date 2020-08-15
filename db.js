@@ -17,6 +17,7 @@ const sqlConfig = {
     parseJSON: true,
     requestTimeout:60000,
     connectionTimeout:60000,
+    encrypt: false,
     pool: {
         max: 10,
         min: 0,

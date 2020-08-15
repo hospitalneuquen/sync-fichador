@@ -6,7 +6,10 @@ var FichadaSchema = new mongoose.Schema({
             type: mongoose.Types.ObjectId,
             required: true,
             index: true
-        }
+        },
+        nombre: String, 
+        apellido: String
+
     },
     fecha:{
         type: Date,
