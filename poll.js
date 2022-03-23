@@ -75,8 +75,18 @@ async function removeFichadaFromSQLServer(mssqlPool, fichadaID){
     return;
 }
 
+
+async function fichadaAlreadyExists(fichada, agente) {
+  return await schemas.Fichada.exists({"agente._id": agente._id, fecha: fichada.fecha, esEntrada: fichada.esEntrada, reloj: fichada.reloj})
+}
+
 async function saveFichadaToMongo(fichada, agente){
     if (!agente) throw new SyncDataException(`La fichada posee un ID de Agente no valido en MongoDB. FichadaID=${fichada.id}`);
+
+    if (fichadaAlreadyExists(fichada, agente)) {
+      logger.debug('Fichada already exists in Mongo: ' + JSON.stringify(fichada))
+      return
+    }
     
     // El agente existe. Creamos la fichada con sus respectivos 
     // datos y guardamos en la base.
