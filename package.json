@@ -4,7 +4,7 @@
   "description": "Sincroniza fichadas desde SQLServer a MongoDB",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --testEnvironment=node --runInBand ./test/"
   },
   "author": "David Nievas <nievas.david@gmail.com>",
   "license": "MIT",
@@ -13,5 +13,9 @@
     "mongoose": "^5.9.5",
     "mssql": "^6.2.0",
     "winston": "^3.2.1"
+  },
+  "devDependencies": {
+    "jest": "^27.5.1",
+    "mongodb-memory-server": "^8.4.1"
   }
 }
