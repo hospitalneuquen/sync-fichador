@@ -82,12 +82,11 @@ async function fichadaAlreadyExists(fichada, agente) {
 
 async function saveFichadaToMongo(fichada, agente){
     if (!agente) throw new SyncDataException(`La fichada posee un ID de Agente no valido en MongoDB. FichadaID=${fichada.id}`);
-
-    if (fichadaAlreadyExists(fichada, agente)) {
+    if (await fichadaAlreadyExists(fichada, agente)) {
       logger.debug('Fichada already exists in Mongo: ' + JSON.stringify(fichada))
       return
     }
-    
+
     // El agente existe. Creamos la fichada con sus respectivos 
     // datos y guardamos en la base.
     let fichadaToSync = new schemas.Fichada(
