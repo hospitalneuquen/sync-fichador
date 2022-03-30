@@ -60,8 +60,13 @@ describe('Fichadas', () => {
     // expect(fichadasCache[0].salida).toEqual(fichada.fecha)
   })
 
-  it('Should resolve different days', async () => {
-    const prevDayFichada = { ...fichada, esEntrada: true, fecha: utils.substractOneDay(fichada.fecha) }
+  it('Should resolve 12hours diff', async () => {
+    const substractHours = (hours, date) => {
+      date.setHours(date.getHours() - hours)
+      return date
+    }
+
+    const prevDayFichada = { ...fichada, esEntrada: true, fecha: substractHours(12, fichada.fecha) }
     await poll.saveFichadaToMongo(prevDayFichada, agente)
 
     const todayFichada = { ...fichada, esEntrada: false, fecha: fichada.fecha }
@@ -71,7 +76,30 @@ describe('Fichadas', () => {
     expect(fichadas.length).toEqual(2)
 
     const fichadasCache = await schemas.FichadaCache.find()
-    console.log(fichadasCache)
+    expect(fichadasCache.length).toEqual(1)
+    const fechaFichada = utils.parseDate(prevDayFichada.fecha);
+    expect(fichadasCache[0].fecha).toEqual(fechaFichada)
+    expect(fichadasCache[0].entrada).toEqual(prevDayFichada.fecha)
+    expect(fichadasCache[0].salida).toEqual(fichada.fecha)
+    // expect(fichadasCache[0].salida).toEqual(fichada.fecha)
+  })
+
+  it('Should resolve 23hours diff', async () => {
+    const substractHours = (hours, date) => {
+      date.setHours(date.getHours() - hours)
+      return date
+    }
+
+    const prevDayFichada = { ...fichada, esEntrada: true, fecha: substractHours(23, fichada.fecha) }
+    await poll.saveFichadaToMongo(prevDayFichada, agente)
+
+    const todayFichada = { ...fichada, esEntrada: false, fecha: fichada.fecha }
+    await poll.saveFichadaToMongo(todayFichada, agente)
+
+    const fichadas = await schemas.Fichada.find()
+    expect(fichadas.length).toEqual(2)
+
+    const fichadasCache = await schemas.FichadaCache.find()
     expect(fichadasCache.length).toEqual(1)
     const fechaFichada = utils.parseDate(prevDayFichada.fecha);
     expect(fichadasCache[0].fecha).toEqual(fechaFichada)
